@@ -1,0 +1,114 @@
+# STB Toolkit Watchlist Examples
+
+## Large Cap Tech (High Priority)
+AAPL - Apple Inc.
+MSFT - Microsoft Corporation
+GOOGL - Alphabet Inc.
+AMZN - Amazon.com Inc.
+NVDA - NVIDIA Corporation
+META - Meta Platforms Inc.
+TSLA - Tesla Inc.
+NFLX - Netflix Inc.
+AMD - Advanced Micro Devices
+CRM - Salesforce Inc.
+
+## Large Cap Finance
+JPM - JPMorgan Chase & Co.
+BAC - Bank of America Corp.
+WFC - Wells Fargo & Company
+GS - Goldman Sachs Group Inc.
+MS - Morgan Stanley
+C - Citigroup Inc.
+V - Visa Inc.
+MA - Mastercard Inc.
+AXP - American Express Company
+BLK - BlackRock Inc.
+
+## Large Cap Healthcare
+JNJ - Johnson & Johnson
+UNH - UnitedHealth Group Inc.
+PFE - Pfizer Inc.
+ABBV - AbbVie Inc.
+TMO - Thermo Fisher Scientific
+ABT - Abbott Laboratories
+MRK - Merck & Co. Inc.
+LLY - Eli Lilly and Company
+BMY - Bristol-Myers Squibb
+AMGN - Amgen Inc.
+
+## Growth Stocks (Medium Priority)
+PLTR - Palantir Technologies
+SNOW - Snowflake Inc.
+COIN - Coinbase Global Inc.
+RBLX - Roblox Corporation
+DKNG - DraftKings Inc.
+UBER - Uber Technologies Inc.
+LYFT - Lyft Inc.
+SQ - Block Inc.
+SHOP - Shopify Inc.
+ZM - Zoom Video Communications
+
+## Momentum Plays
+RIVN - Rivian Automotive Inc.
+LCID - Lucid Group Inc.
+NIO - NIO Inc.
+XPEV - XPeng Inc.
+SOFI - SoFi Technologies Inc.
+HOOD - Robinhood Markets Inc.
+AFRM - Affirm Holdings Inc.
+UPST - Upstart Holdings Inc.
+
+## ETFs for Relative Strength Comparison
+SPY - S&P 500 ETF
+QQQ - Nasdaq 100 ETF
+IWM - Russell 2000 ETF
+DIA - Dow Jones ETF
+XLF - Financial Sector ETF
+XLK - Technology Sector ETF
+XLE - Energy Sector ETF
+XLV - Healthcare Sector ETF
+XLI - Industrial Sector ETF
+XLY - Consumer Discretionary ETF
+
+## Sector Rotation Plays
+Energy: XOM, CVX, COP, SLB
+Commodities: FCX, NEM, GOLD
+Utilities: NEE, DUK, SO
+Real Estate: AMT, PLD, EQIX
+Consumer Staples: PG, KO, PEP, WMT
+
+## High Short Interest (Squeeze Potential)
+# Update regularly from FINRA data
+# Look for: Short Interest > 15%, Days to Cover > 3
+
+## Liquid Options (Good for Institutional Flow)
+# High volume stocks with active options market
+SPY, QQQ, AAPL, TSLA, NVDA, AMD, AMZN, MSFT, META, GOOGL
+
+## Watchlist Management Tips
+1. Limit to 30-50 symbols maximum
+2. Organize by priority/tier
+3. Review weekly, remove non-performers
+4. Add new symbols showing momentum
+5. Balance across sectors
+6. Focus on liquid stocks (>1M daily volume)
+7. Consider market cap requirements
+8. Update based on market conditions
+
+## Symbol Selection Criteria
+✓ Average Daily Volume > 1M shares
+✓ Market Cap > $100M
+✓ Price > $1.00
+✓ Options available (for enrichment data)
+✓ Reasonable spread (< 1%)
+✓ Trending or high volatility
+✓ Sector diversification
+
+## Symbols to Generally Avoid
+✗ Penny stocks (< $1)
+✗ Low volume (< 500k daily)
+✗ Wide spreads (> 2%)
+✗ Recently IPO'd (< 3 months)
+✗ Highly manipulated stocks
+✗ Illiquid ETFs
+✗ OTC stocks

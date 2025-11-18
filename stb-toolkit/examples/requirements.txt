@@ -1,0 +1,30 @@
+# STB Toolkit Webhook Handler Dependencies
+
+# Web Framework
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# HTTP Requests
+requests==2.31.0
+urllib3==2.1.0
+
+# Rate Limiting
+ratelimit==2.2.1
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Logging
+colorlog==6.8.0
+
+# Optional: Production Server
+gunicorn==21.2.0
+
+# Optional: Caching
+redis==5.0.1
+
+# Optional: Database
+SQLAlchemy==2.0.23
+
+# Optional: Async Support
+aiohttp==3.9.1

@@ -1,0 +1,131 @@
+{
+  "tradingview_alert_messages": {
+    "buy_signal": {
+      "condition": "STB 20-Signal Breakout - STB Buy Signal",
+      "message": "{\"signal\":\"BUY\",\"ticker\":\"{{ticker}}\",\"price\":\"{{close}}\",\"signals\":\"{{plot_0}}\",\"time\":\"{{time}}\",\"interval\":\"{{interval}}\",\"exchange\":\"{{exchange}}\"}",
+      "description": "Triggered when bullish signals >= threshold"
+    },
+    "sell_signal": {
+      "condition": "STB 20-Signal Breakout - STB Sell Signal",
+      "message": "{\"signal\":\"SELL\",\"ticker\":\"{{ticker}}\",\"price\":\"{{close}}\",\"signals\":\"{{plot_0}}\",\"time\":\"{{time}}\",\"interval\":\"{{interval}}\",\"exchange\":\"{{exchange}}\"}",
+      "description": "Triggered when bearish signals >= threshold"
+    },
+    "strong_breakout": {
+      "condition": "STB 20-Signal Breakout - STB Strong Breakout",
+      "message": "{\"signal\":\"STRONG_BUY\",\"ticker\":\"{{ticker}}\",\"price\":\"{{close}}\",\"signals\":\"{{plot_0}}\",\"time\":\"{{time}}\",\"interval\":\"{{interval}}\",\"priority\":\"HIGH\"}",
+      "description": "Triggered when bullish signals >= 16"
+    }
+  },
+  "webhook_response_examples": {
+    "success": {
+      "status": "success",
+      "ticker": "AAPL",
+      "enriched": true,
+      "enrichment_timestamp": "2024-01-15T10:30:00Z",
+      "institutional_data": {
+        "short_interest": {
+          "percent": 5.2,
+          "days_to_cover": 1.47
+        },
+        "options_flow": {
+          "sentiment": "BULLISH",
+          "large_trades_24h": 3
+        },
+        "dark_pool": {
+          "percentage": 11.1,
+          "large_prints": 2
+        }
+      }
+    },
+    "filtered": {
+      "status": "filtered",
+      "reason": "below_threshold",
+      "ticker": "XYZ",
+      "signals": 8
+    },
+    "error": {
+      "status": "error",
+      "error": "Invalid ticker symbol",
+      "timestamp": "2024-01-15T10:30:00Z"
+    }
+  },
+  "discord_message_templates": {
+    "buy_alert": {
+      "title": "🟢 STB BUY SIGNAL",
+      "color": 65280,
+      "fields": [
+        {
+          "name": "Ticker",
+          "value": "{{ticker}}",
+          "inline": true
+        },
+        {
+          "name": "Price",
+          "value": "${{price}}",
+          "inline": true
+        },
+        {
+          "name": "Signals",
+          "value": "{{signals}}/20",
+          "inline": true
+        },
+        {
+          "name": "Short Interest",
+          "value": "{{short_interest}}%",
+          "inline": true
+        },
+        {
+          "name": "Options Flow",
+          "value": "{{options_sentiment}}",
+          "inline": true
+        },
+        {
+          "name": "Dark Pool",
+          "value": "{{dark_pool}}%",
+          "inline": true
+        }
+      ]
+    },
+    "sell_alert": {
+      "title": "🔴 STB SELL SIGNAL",
+      "color": 16711680,
+      "fields": [
+        {
+          "name": "Ticker",
+          "value": "{{ticker}}",
+          "inline": true
+        },
+        {
+          "name": "Price",
+          "value": "${{price}}",
+          "inline": true
+        },
+        {
+          "name": "Signals",
+          "value": "{{signals}}/20",
+          "inline": true
+        }
+      ]
+    }
+  },
+  "alert_settings_presets": {
+    "conservative": {
+      "signal_threshold": 16,
+      "description": "Fewer signals, higher confidence",
+      "expected_frequency": "2-5 per month per symbol",
+      "win_rate_target": "65-75%"
+    },
+    "balanced": {
+      "signal_threshold": 12,
+      "description": "Default balanced approach",
+      "expected_frequency": "10-20 per month per symbol",
+      "win_rate_target": "55-65%"
+    },
+    "aggressive": {
+      "signal_threshold": 10,
+      "description": "More signals, active trading",
+      "expected_frequency": "30-50 per month per symbol",
+      "win_rate_target": "45-55%"
+    }
+  }
+}
