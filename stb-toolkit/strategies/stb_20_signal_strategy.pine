@@ -1,0 +1,288 @@
+// STB Toolkit - 20-Signal Breakout Strategy (Backtesting Version)
+// @version=5
+strategy("STB 20-Signal Strategy", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// ========================================
+// INPUT PARAMETERS
+// ========================================
+
+// Strategy Settings
+use_stop_loss = input.bool(true, "Use Stop Loss", group="Risk Management")
+stop_loss_pct = input.float(2.0, "Stop Loss %", minval=0.1, maxval=20, step=0.1, group="Risk Management")
+use_take_profit = input.bool(true, "Use Take Profit", group="Risk Management")
+take_profit_pct = input.float(4.0, "Take Profit %", minval=0.1, maxval=50, step=0.1, group="Risk Management")
+use_trailing_stop = input.bool(false, "Use Trailing Stop", group="Risk Management")
+trailing_stop_pct = input.float(1.5, "Trailing Stop %", minval=0.1, maxval=20, step=0.1, group="Risk Management")
+
+// Position sizing
+risk_per_trade = input.float(2.0, "Risk Per Trade %", minval=0.1, maxval=10, step=0.1, group="Position Sizing")
+
+// Technical Indicators
+rsi_period = input.int(14, "RSI Period", minval=1, group="Technical Indicators")
+rsi_overbought = input.int(70, "RSI Overbought", minval=50, maxval=100, group="Technical Indicators")
+rsi_oversold = input.int(30, "RSI Oversold", minval=0, maxval=50, group="Technical Indicators")
+
+macd_fast = input.int(12, "MACD Fast", minval=1, group="Technical Indicators")
+macd_slow = input.int(26, "MACD Slow", minval=1, group="Technical Indicators")
+macd_signal = input.int(9, "MACD Signal", minval=1, group="Technical Indicators")
+
+bb_length = input.int(20, "Bollinger Bands Length", minval=1, group="Technical Indicators")
+bb_mult = input.float(2.0, "Bollinger Bands Mult", minval=0.1, group="Technical Indicators")
+
+// Moving Averages
+sma_short = input.int(20, "SMA Short Period", minval=1, group="Moving Averages")
+sma_medium = input.int(50, "SMA Medium Period", minval=1, group="Moving Averages")
+sma_long = input.int(200, "SMA Long Period", minval=1, group="Moving Averages")
+ema_period = input.int(21, "EMA Period", minval=1, group="Moving Averages")
+
+// Volume Analysis
+volume_ma_period = input.int(20, "Volume MA Period", minval=1, group="Volume")
+volume_spike_mult = input.float(2.0, "Volume Spike Multiplier", minval=1.0, group="Volume")
+
+// VWAP Settings
+vwap_bands_mult = input.float(1.0, "VWAP Bands Multiplier", minval=0.1, group="VWAP/AVWAP")
+
+// Relative Strength
+rs_compare_symbol = input.symbol("SPY", "RS Compare Symbol", group="Relative Strength")
+
+// Signal Thresholds
+signal_threshold = input.int(12, "Signal Threshold (min signals)", minval=1, maxval=20, group="Signal Settings")
+exit_signal_threshold = input.int(10, "Exit Signal Threshold", minval=1, maxval=20, group="Signal Settings")
+
+// ========================================
+// CALCULATIONS - TECHNICAL INDICATORS
+// ========================================
+
+// RSI
+rsi = ta.rsi(close, rsi_period)
+rsi_bullish = rsi < rsi_oversold
+rsi_bearish = rsi > rsi_overbought
+
+// MACD
+[macd_line, signal_line, macd_hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+macd_bullish = ta.crossover(macd_line, signal_line)
+macd_bearish = ta.crossunder(macd_line, signal_line)
+macd_momentum_bull = macd_hist > 0 and macd_hist > macd_hist[1]
+macd_momentum_bear = macd_hist < 0 and macd_hist < macd_hist[1]
+
+// Bollinger Bands
+bb_basis = ta.sma(close, bb_length)
+bb_dev = bb_mult * ta.stdev(close, bb_length)
+bb_upper = bb_basis + bb_dev
+bb_lower = bb_basis - bb_dev
+bb_bullish = close < bb_lower
+bb_bearish = close > bb_upper
+
+// Moving Averages
+sma_20 = ta.sma(close, sma_short)
+sma_50 = ta.sma(close, sma_medium)
+sma_200 = ta.sma(close, sma_long)
+ema_21 = ta.ema(close, ema_period)
+
+ma_short_bull = close > sma_20 and sma_20 > sma_20[1]
+ma_medium_bull = close > sma_50 and sma_50 > sma_50[1]
+ma_long_bull = close > sma_200
+ma_golden_cross = ta.crossover(sma_50, sma_200)
+ma_short_bear = close < sma_20 and sma_20 < sma_20[1]
+ma_medium_bear = close < sma_50 and sma_50 < sma_50[1]
+ma_long_bear = close < sma_200
+ma_death_cross = ta.crossunder(sma_50, sma_200)
+
+// ========================================
+// CALCULATIONS - VOLUME ANALYSIS
+// ========================================
+
+volume_ma = ta.sma(volume, volume_ma_period)
+volume_spike = volume > (volume_ma * volume_spike_mult)
+volume_increasing = volume > volume[1] and volume[1] > volume[2]
+volume_bull = volume > volume_ma and close > open
+volume_bear = volume > volume_ma and close < open
+
+// ========================================
+// CALCULATIONS - VWAP/AVWAP
+// ========================================
+
+vwap_value = ta.vwap(close)
+vwap_dev = ta.stdev(close - vwap_value, bb_length)
+vwap_upper = vwap_value + (vwap_bands_mult * vwap_dev)
+vwap_lower = vwap_value - (vwap_bands_mult * vwap_dev)
+
+vwap_bullish = close > vwap_value and ta.crossover(close, vwap_value)
+vwap_bearish = close < vwap_value and ta.crossunder(close, vwap_value)
+vwap_above = close > vwap_value
+vwap_below = close < vwap_value
+
+// ========================================
+// CALCULATIONS - RELATIVE STRENGTH
+// ========================================
+
+rs_symbol = request.security(rs_compare_symbol, timeframe.period, close)
+rs_ratio = close / rs_symbol
+rs_ratio_ma = ta.sma(rs_ratio, 20)
+rs_bullish = rs_ratio > rs_ratio_ma and rs_ratio > rs_ratio[1]
+rs_bearish = rs_ratio < rs_ratio_ma and rs_ratio < rs_ratio[1]
+
+// ========================================
+// CALCULATIONS - MOMENTUM
+// ========================================
+
+// Stochastic
+k = ta.stoch(close, high, low, 14)
+d = ta.sma(k, 3)
+stoch_oversold = k < 20 and d < 20
+stoch_overbought = k > 80 and d > 80
+
+// ADX for trend strength
+[plus_di, minus_di, adx] = ta.dmi(14, 14)
+adx_trending = adx > 25
+adx_bull = plus_di > minus_di and adx_trending
+adx_bear = minus_di > plus_di and adx_trending
+
+// ========================================
+// SIGNAL AGGREGATION
+// ========================================
+
+// Count bullish signals
+bullish_signals = 0
+bullish_signals := bullish_signals + (rsi_bullish ? 1 : 0)
+bullish_signals := bullish_signals + (macd_bullish ? 1 : 0)
+bullish_signals := bullish_signals + (macd_momentum_bull ? 1 : 0)
+bullish_signals := bullish_signals + (bb_bullish ? 1 : 0)
+bullish_signals := bullish_signals + (ma_short_bull ? 1 : 0)
+bullish_signals := bullish_signals + (ma_medium_bull ? 1 : 0)
+bullish_signals := bullish_signals + (ma_long_bull ? 1 : 0)
+bullish_signals := bullish_signals + (ma_golden_cross ? 1 : 0)
+bullish_signals := bullish_signals + (volume_spike and close > open ? 1 : 0)
+bullish_signals := bullish_signals + (volume_bull ? 1 : 0)
+bullish_signals := bullish_signals + (volume_increasing and close > open ? 1 : 0)
+bullish_signals := bullish_signals + (vwap_bullish ? 1 : 0)
+bullish_signals := bullish_signals + (vwap_above ? 1 : 0)
+bullish_signals := bullish_signals + (rs_bullish ? 1 : 0)
+bullish_signals := bullish_signals + (stoch_oversold ? 1 : 0)
+bullish_signals := bullish_signals + (adx_bull ? 1 : 0)
+bullish_signals := bullish_signals + (close > ema_21 and ema_21 > ema_21[1] ? 1 : 0)
+bullish_signals := bullish_signals + (close > high[1] ? 1 : 0)
+bullish_signals := bullish_signals + (close > bb_basis and close[1] <= bb_basis ? 1 : 0)
+bullish_signals := bullish_signals + (ta.crossover(close, sma_20) ? 1 : 0)
+
+// Count bearish signals
+bearish_signals = 0
+bearish_signals := bearish_signals + (rsi_bearish ? 1 : 0)
+bearish_signals := bearish_signals + (macd_bearish ? 1 : 0)
+bearish_signals := bearish_signals + (macd_momentum_bear ? 1 : 0)
+bearish_signals := bearish_signals + (bb_bearish ? 1 : 0)
+bearish_signals := bearish_signals + (ma_short_bear ? 1 : 0)
+bearish_signals := bearish_signals + (ma_medium_bear ? 1 : 0)
+bearish_signals := bearish_signals + (ma_long_bear ? 1 : 0)
+bearish_signals := bearish_signals + (ma_death_cross ? 1 : 0)
+bearish_signals := bearish_signals + (volume_spike and close < open ? 1 : 0)
+bearish_signals := bearish_signals + (volume_bear ? 1 : 0)
+bearish_signals := bearish_signals + (volume_increasing and close < open ? 1 : 0)
+bearish_signals := bearish_signals + (vwap_bearish ? 1 : 0)
+bearish_signals := bearish_signals + (vwap_below ? 1 : 0)
+bearish_signals := bearish_signals + (rs_bearish ? 1 : 0)
+bearish_signals := bearish_signals + (stoch_overbought ? 1 : 0)
+bearish_signals := bearish_signals + (adx_bear ? 1 : 0)
+bearish_signals := bearish_signals + (close < ema_21 and ema_21 < ema_21[1] ? 1 : 0)
+bearish_signals := bearish_signals + (close < low[1] ? 1 : 0)
+bearish_signals := bearish_signals + (close < bb_basis and close[1] >= bb_basis ? 1 : 0)
+bearish_signals := bearish_signals + (ta.crossunder(close, sma_20) ? 1 : 0)
+
+// ========================================
+// STRATEGY LOGIC
+// ========================================
+
+// Entry conditions
+long_condition = bullish_signals >= signal_threshold
+short_condition = bearish_signals >= signal_threshold
+
+// Exit conditions
+exit_long = bearish_signals >= exit_signal_threshold
+exit_short = bullish_signals >= exit_signal_threshold
+
+// Calculate stop loss and take profit levels
+var float long_entry_price = na
+var float short_entry_price = na
+
+if (strategy.position_size > 0)
+    long_entry_price := strategy.position_avg_price
+if (strategy.position_size < 0)
+    short_entry_price := strategy.position_avg_price
+
+long_stop_loss = long_entry_price * (1 - stop_loss_pct / 100)
+long_take_profit = long_entry_price * (1 + take_profit_pct / 100)
+short_stop_loss = short_entry_price * (1 + stop_loss_pct / 100)
+short_take_profit = short_entry_price * (1 - take_profit_pct / 100)
+
+// Execute strategy
+if (long_condition and strategy.position_size == 0)
+    if use_stop_loss and use_take_profit
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Exit Long", "Long", stop=long_stop_loss, limit=long_take_profit)
+    else if use_stop_loss
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Exit Long", "Long", stop=long_stop_loss)
+    else if use_take_profit
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Exit Long", "Long", limit=long_take_profit)
+    else
+        strategy.entry("Long", strategy.long)
+
+if (exit_long and strategy.position_size > 0)
+    strategy.close("Long", comment="Signal Exit")
+
+if (short_condition and strategy.position_size == 0)
+    if use_stop_loss and use_take_profit
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Exit Short", "Short", stop=short_stop_loss, limit=short_take_profit)
+    else if use_stop_loss
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Exit Short", "Short", stop=short_stop_loss)
+    else if use_take_profit
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Exit Short", "Short", limit=short_take_profit)
+    else
+        strategy.entry("Short", strategy.short)
+
+if (exit_short and strategy.position_size < 0)
+    strategy.close("Short", comment="Signal Exit")
+
+// Trailing stop
+if use_trailing_stop
+    if (strategy.position_size > 0)
+        strategy.exit("Trail Long", "Long", trail_points=close * trailing_stop_pct / 100 / syminfo.mintick, trail_offset=0)
+    if (strategy.position_size < 0)
+        strategy.exit("Trail Short", "Short", trail_points=close * trailing_stop_pct / 100 / syminfo.mintick, trail_offset=0)
+
+// ========================================
+// VISUALIZATION
+// ========================================
+
+// Plot Moving Averages
+plot(sma_20, "SMA 20", color=color.new(color.blue, 0), linewidth=1)
+plot(sma_50, "SMA 50", color=color.new(color.orange, 0), linewidth=2)
+plot(sma_200, "SMA 200", color=color.new(color.red, 0), linewidth=2)
+plot(ema_21, "EMA 21", color=color.new(color.green, 0), linewidth=1)
+
+// Plot VWAP
+plot(vwap_value, "VWAP", color=color.new(color.purple, 0), linewidth=2)
+
+// Plot entry signals
+plotshape(long_condition and strategy.position_size == 0, "Long Entry", shape.labelup, location.belowbar, 
+         color=color.new(color.green, 0), text="LONG\n" + str.tostring(bullish_signals), textcolor=color.white)
+plotshape(short_condition and strategy.position_size == 0, "Short Entry", shape.labeldown, location.abovebar, 
+         color=color.new(color.red, 0), text="SHORT\n" + str.tostring(bearish_signals), textcolor=color.white)
+
+// Plot stop loss and take profit levels
+plot(strategy.position_size > 0 and use_stop_loss ? long_stop_loss : na, "Long SL", 
+     color=color.red, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 and use_take_profit ? long_take_profit : na, "Long TP", 
+     color=color.green, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size < 0 and use_stop_loss ? short_stop_loss : na, "Short SL", 
+     color=color.red, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size < 0 and use_take_profit ? short_take_profit : na, "Short TP", 
+     color=color.green, style=plot.style_linebr, linewidth=2)
+
+// Background color for positions
+bgcolor(strategy.position_size > 0 ? color.new(color.green, 95) : na)
+bgcolor(strategy.position_size < 0 ? color.new(color.red, 95) : na)

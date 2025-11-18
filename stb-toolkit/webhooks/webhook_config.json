@@ -1,0 +1,95 @@
+{
+  "webhook_endpoints": {
+    "primary": {
+      "url": "https://your-webhook-server.com/api/stb-alerts",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer YOUR_API_KEY_HERE"
+      },
+      "timeout": 5000,
+      "retry_attempts": 3
+    },
+    "backup": {
+      "url": "https://backup-webhook-server.com/api/stb-alerts",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer YOUR_BACKUP_API_KEY_HERE"
+      },
+      "timeout": 5000,
+      "retry_attempts": 2
+    }
+  },
+  "data_enrichment": {
+    "short_interest": {
+      "enabled": true,
+      "provider": "finra",
+      "api_endpoint": "https://api.finra.org/data/v1/short-interest",
+      "api_key_env": "FINRA_API_KEY",
+      "cache_duration_hours": 24
+    },
+    "options_flow": {
+      "enabled": true,
+      "provider": "unusual_whales",
+      "api_endpoint": "https://api.unusualwhales.com/api/flow",
+      "api_key_env": "UNUSUAL_WHALES_API_KEY",
+      "lookback_hours": 24,
+      "min_premium": 100000
+    },
+    "dark_pool": {
+      "enabled": true,
+      "provider": "quiver_quant",
+      "api_endpoint": "https://api.quiverquant.com/beta/darkpool",
+      "api_key_env": "QUIVER_API_KEY",
+      "lookback_days": 7
+    },
+    "institutional_ownership": {
+      "enabled": true,
+      "provider": "sec_edgar",
+      "api_endpoint": "https://api.sec.gov/data/institutional",
+      "lookback_quarters": 2
+    }
+  },
+  "alert_filters": {
+    "min_signal_count": 12,
+    "max_signal_count": 20,
+    "volume_multiplier_min": 1.5,
+    "price_min": 1.0,
+    "price_max": null,
+    "market_cap_min": 100000000,
+    "excluded_sectors": [],
+    "excluded_tickers": []
+  },
+  "notification_settings": {
+    "discord": {
+      "enabled": false,
+      "webhook_url": "YOUR_DISCORD_WEBHOOK_URL",
+      "mention_role_id": null
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "YOUR_SLACK_WEBHOOK_URL",
+      "channel": "#trading-alerts"
+    },
+    "telegram": {
+      "enabled": false,
+      "bot_token_env": "TELEGRAM_BOT_TOKEN",
+      "chat_id_env": "TELEGRAM_CHAT_ID"
+    },
+    "email": {
+      "enabled": false,
+      "smtp_host": "smtp.gmail.com",
+      "smtp_port": 587,
+      "from_email_env": "EMAIL_FROM",
+      "to_emails": [],
+      "password_env": "EMAIL_PASSWORD"
+    }
+  },
+  "logging": {
+    "level": "info",
+    "file": "stb_alerts.log",
+    "max_size_mb": 100,
+    "backup_count": 5
+  }
+}
