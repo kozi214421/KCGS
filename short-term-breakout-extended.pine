@@ -1,0 +1,360 @@
+//@version=5
+indicator("STB Extended - Short-Term Breakout Toolkit", shorttitle="STB Extended", overlay=true, max_labels_count=500, max_boxes_count=500)
+
+// ========================================
+// SHORT-TERM BREAKOUT TOOLKIT (STB) - EXTENDED INDICATOR
+// Version: 1.0
+// Author: kozi214421 / Copilot-assisted
+// Date: 2025-11-18
+//
+// Evaluates 20 heuristic signals for high-probability short-term breakouts
+// Outputs a combined score, visual helpers (EMAs, AVWAP, VBP histogram), and signal table
+// ========================================
+
+// ========================================
+// INPUTS
+// ========================================
+
+// Core Parameters
+resistance_lookback = input.int(20, "Resistance Lookback", minval=5, maxval=200, group="Core Signals")
+volume_ma_len = input.int(20, "Volume MA Length", minval=5, maxval=100, group="Core Signals")
+vol_spike_mult = input.float(1.8, "Volume Spike Multiplier", minval=1.0, maxval=5.0, step=0.1, group="Core Signals")
+
+// EMA Settings
+ema9_len = input.int(9, "EMA 9", minval=2, maxval=50, group="EMAs")
+ema20_len = input.int(20, "EMA 20", minval=5, maxval=100, group="EMAs")
+ema50_len = input.int(50, "EMA 50", minval=10, maxval=200, group="EMAs")
+
+// RSI Settings
+rsi_len = input.int(14, "RSI Length", minval=2, maxval=50, group="Momentum")
+rsi_threshold = input.float(60, "RSI Threshold", minval=50, maxval=80, step=1, group="Momentum")
+
+// Bollinger Bands
+bb_len = input.int(20, "BB Length", minval=5, maxval=100, group="Bollinger Bands")
+bb_mult = input.float(2.0, "BB Multiplier", minval=0.5, maxval=5.0, step=0.1, group="Bollinger Bands")
+squeeze_mult = input.float(0.5, "Squeeze Width Threshold", minval=0.1, maxval=1.0, step=0.05, group="Bollinger Bands")
+
+// MACD Settings
+macd_fast = input.int(12, "MACD Fast", minval=2, maxval=50, group="MACD")
+macd_slow = input.int(26, "MACD Slow", minval=5, maxval=100, group="MACD")
+macd_signal = input.int(9, "MACD Signal", minval=2, maxval=50, group="MACD")
+
+// VBP (Volume by Price) Approximation
+vbp_lookback = input.int(100, "VBP Lookback", minval=20, maxval=500, group="Volume Profile")
+vbp_bins = input.int(20, "VBP Bins", minval=5, maxval=50, group="Volume Profile")
+
+// AVWAP (Anchored VWAP) Approximation
+avwap_anchor_bars = input.int(50, "AVWAP Anchor Bars Ago", minval=10, maxval=500, group="AVWAP")
+
+// Manual Flags (enriched by webhook or manual entry)
+short_interest_pct = input.float(0.0, "Short Interest %", minval=0.0, maxval=100.0, step=0.1, group="Manual Flags")
+days_to_cover = input.float(0.0, "Days to Cover", minval=0.0, maxval=50.0, step=0.1, group="Manual Flags")
+options_bullish_flag = input.bool(false, "Options Bullish Flag", group="Manual Flags")
+dark_pool_buys = input.bool(false, "Dark Pool Buys", group="Manual Flags")
+orderflow_bullish = input.bool(false, "Order Flow Bullish", group="Manual Flags")
+
+// Alert Thresholds
+alert_score1 = input.int(6, "Alert Threshold 1 (Breakout)", minval=1, maxval=20, group="Alerts")
+alert_score2 = input.int(10, "Alert Threshold 2 (Strong)", minval=1, maxval=20, group="Alerts")
+alert_score3 = input.int(14, "Alert Threshold 3 (Institutional)", minval=1, maxval=20, group="Alerts")
+
+// ========================================
+// CALCULATIONS
+// ========================================
+
+// EMAs
+ema9 = ta.ema(close, ema9_len)
+ema20 = ta.ema(close, ema20_len)
+ema50 = ta.ema(close, ema50_len)
+
+// RSI
+rsi = ta.rsi(close, rsi_len)
+
+// Bollinger Bands
+bb_basis = ta.sma(close, bb_len)
+bb_dev = ta.stdev(close, bb_len)
+bb_upper = bb_basis + bb_mult * bb_dev
+bb_lower = bb_basis - bb_mult * bb_dev
+bb_width = (bb_upper - bb_lower) / bb_basis
+
+// MACD
+[macd_line, signal_line, macd_hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+
+// Volume
+vol_ma = ta.sma(volume, volume_ma_len)
+
+// ATR for various calculations
+atr = ta.atr(14)
+
+// ========================================
+// SIGNAL CALCULATIONS (20 signals)
+// ========================================
+
+// Signal 1: Price breaking above resistance
+resistance = ta.highest(high, resistance_lookback)[1]
+signal_1_breakout = close > resistance and close[1] <= resistance ? 1 : 0
+
+// Signal 2: Volume expansion
+signal_2_volume = volume > vol_ma * vol_spike_mult ? 1 : 0
+
+// Signal 3: EMA stacking (9 > 20 > 50 and price above all)
+signal_3_ema_stack = close > ema9 and ema9 > ema20 and ema20 > ema50 ? 1 : 0
+
+// Signal 4: RSI momentum
+signal_4_rsi = rsi > rsi_threshold ? 1 : 0
+
+// Signal 5: BB squeeze then release
+bb_width_ma = ta.sma(bb_width, 20)
+bb_squeeze = bb_width < bb_width_ma * squeeze_mult
+bb_release = bb_squeeze[1] and not bb_squeeze
+signal_5_bb = bb_release ? 1 : 0
+
+// Signal 6: MACD bullish cross above zero
+signal_6_macd = ta.crossover(macd_line, signal_line) and macd_line > 0 ? 1 : 0
+
+// Signal 7: Higher-low structure (last 3 lows are ascending)
+low1 = ta.lowest(low, 5)[5]
+low2 = ta.lowest(low, 5)[10]
+low3 = ta.lowest(low, 5)[15]
+signal_7_higher_lows = low1 > low2 and low2 > low3 ? 1 : 0
+
+// Signal 8: Breakout candle structure (wide range, close near high)
+range_pct = (high - low) / close
+close_position = (close - low) / (high - low)
+signal_8_candle = range_pct > 0.02 and close_position > 0.7 ? 1 : 0
+
+// Signal 9: VBP shelf below price (high-volume node below)
+// Approximate VBP by binning recent prices
+var float[] vbp_prices = array.new_float(vbp_bins, 0.0)
+var float[] vbp_volumes = array.new_float(vbp_bins, 0.0)
+if bar_index % 10 == 0  // Recalculate every 10 bars for efficiency
+    price_min = ta.lowest(low, vbp_lookback)
+    price_max = ta.highest(high, vbp_lookback)
+    bin_size = (price_max - price_min) / vbp_bins
+    array.fill(vbp_volumes, 0.0)
+    for i = 0 to vbp_lookback - 1
+        hist_close = close[i]
+        hist_vol = volume[i]
+        if not na(hist_close) and not na(hist_vol)
+            bin_idx = math.floor((hist_close - price_min) / bin_size)
+            bin_idx := math.max(0, math.min(vbp_bins - 1, bin_idx))
+            current_vol = array.get(vbp_volumes, bin_idx)
+            array.set(vbp_volumes, bin_idx, current_vol + hist_vol)
+            array.set(vbp_prices, bin_idx, price_min + bin_idx * bin_size + bin_size / 2)
+
+// Find high-volume node below current price
+max_vol_below = 0.0
+for i = 0 to vbp_bins - 1
+    bin_price = array.get(vbp_prices, i)
+    bin_vol = array.get(vbp_volumes, i)
+    if bin_price < close and bin_vol > max_vol_below
+        max_vol_below := bin_vol
+avg_vol_vbp = array.sum(vbp_volumes) / vbp_bins
+signal_9_vbp_shelf = max_vol_below > avg_vol_vbp * 1.5 ? 1 : 0
+
+// Signal 10: Low-volume gap above (air pocket)
+max_vol_above = 0.0
+for i = 0 to vbp_bins - 1
+    bin_price = array.get(vbp_prices, i)
+    bin_vol = array.get(vbp_volumes, i)
+    if bin_price > close and bin_vol > max_vol_above
+        max_vol_above := bin_vol
+signal_10_air_pocket = max_vol_above < avg_vol_vbp * 0.5 ? 1 : 0
+
+// Signal 11: Relative Strength (simplified: price vs SPY, if available)
+// For simplicity, we'll use price performance vs its own 50-bar avg
+price_change_50 = (close - close[50]) / close[50] * 100
+signal_11_rel_strength = price_change_50 > 5 ? 1 : 0  // Outperforming by >5%
+
+// Signal 12: Short interest (manual input)
+signal_12_short_interest = short_interest_pct > 10 and days_to_cover > 2 ? 1 : 0
+
+// Signal 13: Options flow (manual flag)
+signal_13_options = options_bullish_flag ? 1 : 0
+
+// Signal 14: AVWAP reclaim (approximate)
+// Calculate simple AVWAP from anchor point
+var float avwap_sum_pv = 0.0
+var float avwap_sum_v = 0.0
+var int anchor_bar = 0
+if bar_index == 0 or bar_index - anchor_bar > avwap_anchor_bars
+    anchor_bar := bar_index
+    avwap_sum_pv := 0.0
+    avwap_sum_v := 0.0
+avwap_sum_pv += close * volume
+avwap_sum_v += volume
+avwap = avwap_sum_pv / avwap_sum_v
+signal_14_avwap = close > avwap and close[1] <= avwap ? 1 : 0
+
+// Signal 15: Dark pool buys (manual flag)
+signal_15_dark_pool = dark_pool_buys ? 1 : 0
+
+// Signal 16: VCP (Volatility Contraction Pattern) - simplified heuristic
+// Look for decreasing volatility (ATR declining) followed by expansion
+atr_ma = ta.sma(atr, 10)
+atr_declining = atr < atr_ma and atr[1] < atr_ma[1] and atr[2] < atr_ma[2]
+atr_expansion = atr > atr[1] * 1.2
+signal_16_vcp = atr_declining[1] and atr_expansion ? 1 : 0
+
+// Signal 17: Inside day/week pattern
+inside_bar = high < high[1] and low > low[1]
+signal_17_inside = inside_bar[1] and high > high[1] ? 1 : 0
+
+// Signal 18: Liquidity vacuum (thin VBP above) - already covered in signal 10
+signal_18_liquidity_vacuum = signal_10_air_pocket
+
+// Signal 19: Institutional accumulation (diminishing pullback volume + higher lows)
+vol_declining_on_pullbacks = volume < volume[1] and close < close[1]
+signal_19_accumulation = vol_declining_on_pullbacks and signal_7_higher_lows ? 1 : 0
+
+// Signal 20: Tape reading (down-volume drying, rally gaining strength)
+up_volume = close > close[1] ? volume : 0
+down_volume = close < close[1] ? volume : 0
+avg_down_vol = ta.sma(down_volume, 10)
+avg_up_vol = ta.sma(up_volume, 10)
+signal_20_tape = avg_up_vol > avg_down_vol * 1.5 and down_volume < avg_down_vol * 0.5 ? 1 : 0
+
+// Order flow (manual flag) - not a separate signal, but enhances others
+orderflow_boost = orderflow_bullish ? 1 : 0
+
+// ========================================
+// TOTAL SCORE
+// ========================================
+total_score = signal_1_breakout + signal_2_volume + signal_3_ema_stack + signal_4_rsi + 
+              signal_5_bb + signal_6_macd + signal_7_higher_lows + signal_8_candle + 
+              signal_9_vbp_shelf + signal_10_air_pocket + signal_11_rel_strength + 
+              signal_12_short_interest + signal_13_options + signal_14_avwap + 
+              signal_15_dark_pool + signal_16_vcp + signal_17_inside + 
+              signal_18_liquidity_vacuum + signal_19_accumulation + signal_20_tape + 
+              orderflow_boost
+
+// ========================================
+// PLOTS
+// ========================================
+
+// Plot EMAs
+plot(ema9, "EMA 9", color=color.new(color.blue, 0), linewidth=2)
+plot(ema20, "EMA 20", color=color.new(color.orange, 0), linewidth=2)
+plot(ema50, "EMA 50", color=color.new(color.red, 0), linewidth=2)
+
+// Plot AVWAP
+plot(avwap, "AVWAP", color=color.new(color.purple, 30), linewidth=2, style=plot.style_circles)
+
+// Plot Bollinger Bands
+plot(bb_upper, "BB Upper", color=color.new(color.gray, 70))
+plot(bb_lower, "BB Lower", color=color.new(color.gray, 70))
+
+// Plot resistance level
+plot(resistance, "Resistance", color=color.new(color.red, 50), linewidth=1, style=plot.style_stepline)
+
+// Score plot (for alerts)
+plot(total_score, "Total Score", display=display.none)
+
+// Background color based on score
+bgcolor(total_score >= alert_score3 ? color.new(color.green, 90) : 
+        total_score >= alert_score2 ? color.new(color.yellow, 95) : 
+        total_score >= alert_score1 ? color.new(color.orange, 97) : na)
+
+// ========================================
+// SIGNAL TABLE
+// ========================================
+var table signal_table = table.new(position.top_right, 3, 22, bgcolor=color.new(color.black, 85), border_width=1)
+
+if barstate.islast
+    table.cell(signal_table, 0, 0, "Signal", text_color=color.white, bgcolor=color.new(color.blue, 70))
+    table.cell(signal_table, 1, 0, "Active", text_color=color.white, bgcolor=color.new(color.blue, 70))
+    table.cell(signal_table, 2, 0, "Details", text_color=color.white, bgcolor=color.new(color.blue, 70))
+    
+    // Row 1: Total Score
+    table.cell(signal_table, 0, 1, "TOTAL SCORE", text_color=color.yellow, text_size=size.large)
+    table.cell(signal_table, 1, 1, str.tostring(total_score), text_color=color.yellow, text_size=size.large)
+    table.cell(signal_table, 2, 1, "", text_color=color.white)
+    
+    // Core signals
+    table.cell(signal_table, 0, 2, "1. Breakout", text_color=color.white)
+    table.cell(signal_table, 1, 2, signal_1_breakout ? "✓" : "—", text_color=signal_1_breakout ? color.lime : color.gray)
+    table.cell(signal_table, 2, 2, str.tostring(math.round(close, 2)), text_color=color.white, text_size=size.small)
+    
+    table.cell(signal_table, 0, 3, "2. Volume Spike", text_color=color.white)
+    table.cell(signal_table, 1, 3, signal_2_volume ? "✓" : "—", text_color=signal_2_volume ? color.lime : color.gray)
+    table.cell(signal_table, 2, 3, str.tostring(math.round(volume/vol_ma, 1)) + "x", text_color=color.white, text_size=size.small)
+    
+    table.cell(signal_table, 0, 4, "3. EMA Stack", text_color=color.white)
+    table.cell(signal_table, 1, 4, signal_3_ema_stack ? "✓" : "—", text_color=signal_3_ema_stack ? color.lime : color.gray)
+    table.cell(signal_table, 2, 4, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 5, "4. RSI > " + str.tostring(rsi_threshold), text_color=color.white)
+    table.cell(signal_table, 1, 5, signal_4_rsi ? "✓" : "—", text_color=signal_4_rsi ? color.lime : color.gray)
+    table.cell(signal_table, 2, 5, str.tostring(math.round(rsi, 1)), text_color=color.white, text_size=size.small)
+    
+    table.cell(signal_table, 0, 6, "5. BB Release", text_color=color.white)
+    table.cell(signal_table, 1, 6, signal_5_bb ? "✓" : "—", text_color=signal_5_bb ? color.lime : color.gray)
+    table.cell(signal_table, 2, 6, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 7, "6. MACD Cross", text_color=color.white)
+    table.cell(signal_table, 1, 7, signal_6_macd ? "✓" : "—", text_color=signal_6_macd ? color.lime : color.gray)
+    table.cell(signal_table, 2, 7, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 8, "7. Higher Lows", text_color=color.white)
+    table.cell(signal_table, 1, 8, signal_7_higher_lows ? "✓" : "—", text_color=signal_7_higher_lows ? color.lime : color.gray)
+    table.cell(signal_table, 2, 8, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 9, "8. Candle Structure", text_color=color.white)
+    table.cell(signal_table, 1, 9, signal_8_candle ? "✓" : "—", text_color=signal_8_candle ? color.lime : color.gray)
+    table.cell(signal_table, 2, 9, "", text_color=color.white)
+    
+    // Advanced signals
+    table.cell(signal_table, 0, 10, "9. VBP Shelf", text_color=color.white)
+    table.cell(signal_table, 1, 10, signal_9_vbp_shelf ? "✓" : "—", text_color=signal_9_vbp_shelf ? color.lime : color.gray)
+    table.cell(signal_table, 2, 10, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 11, "10. Air Pocket", text_color=color.white)
+    table.cell(signal_table, 1, 11, signal_10_air_pocket ? "✓" : "—", text_color=signal_10_air_pocket ? color.lime : color.gray)
+    table.cell(signal_table, 2, 11, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 12, "11. Rel Strength", text_color=color.white)
+    table.cell(signal_table, 1, 12, signal_11_rel_strength ? "✓" : "—", text_color=signal_11_rel_strength ? color.lime : color.gray)
+    table.cell(signal_table, 2, 12, str.tostring(math.round(price_change_50, 1)) + "%", text_color=color.white, text_size=size.small)
+    
+    table.cell(signal_table, 0, 13, "12. Short Interest", text_color=color.white)
+    table.cell(signal_table, 1, 13, signal_12_short_interest ? "✓" : "—", text_color=signal_12_short_interest ? color.lime : color.gray)
+    table.cell(signal_table, 2, 13, str.tostring(short_interest_pct) + "%", text_color=color.white, text_size=size.small)
+    
+    table.cell(signal_table, 0, 14, "13. Options Flow", text_color=color.white)
+    table.cell(signal_table, 1, 14, signal_13_options ? "✓" : "—", text_color=signal_13_options ? color.lime : color.gray)
+    table.cell(signal_table, 2, 14, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 15, "14. AVWAP Reclaim", text_color=color.white)
+    table.cell(signal_table, 1, 15, signal_14_avwap ? "✓" : "—", text_color=signal_14_avwap ? color.lime : color.gray)
+    table.cell(signal_table, 2, 15, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 16, "15. Dark Pool", text_color=color.white)
+    table.cell(signal_table, 1, 16, signal_15_dark_pool ? "✓" : "—", text_color=signal_15_dark_pool ? color.lime : color.gray)
+    table.cell(signal_table, 2, 16, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 17, "16. VCP", text_color=color.white)
+    table.cell(signal_table, 1, 17, signal_16_vcp ? "✓" : "—", text_color=signal_16_vcp ? color.lime : color.gray)
+    table.cell(signal_table, 2, 17, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 18, "17. Inside Bar", text_color=color.white)
+    table.cell(signal_table, 1, 18, signal_17_inside ? "✓" : "—", text_color=signal_17_inside ? color.lime : color.gray)
+    table.cell(signal_table, 2, 18, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 19, "18. Liq Vacuum", text_color=color.white)
+    table.cell(signal_table, 1, 19, signal_18_liquidity_vacuum ? "✓" : "—", text_color=signal_18_liquidity_vacuum ? color.lime : color.gray)
+    table.cell(signal_table, 2, 19, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 20, "19. Accumulation", text_color=color.white)
+    table.cell(signal_table, 1, 20, signal_19_accumulation ? "✓" : "—", text_color=signal_19_accumulation ? color.lime : color.gray)
+    table.cell(signal_table, 2, 20, "", text_color=color.white)
+    
+    table.cell(signal_table, 0, 21, "20. Tape Reading", text_color=color.white)
+    table.cell(signal_table, 1, 21, signal_20_tape ? "✓" : "—", text_color=signal_20_tape ? color.lime : color.gray)
+    table.cell(signal_table, 2, 21, "", text_color=color.white)
+
+// ========================================
+// ALERTS
+// ========================================
+alertcondition(total_score >= alert_score1, title="Breakout Alert", message="STB Breakout: Score >= " + str.tostring(alert_score1))
+alertcondition(total_score >= alert_score2, title="Strong Breakout Alert", message="STB Strong Breakout: Score >= " + str.tostring(alert_score2))
+alertcondition(total_score >= alert_score3, title="Institutional Breakout Alert", message="STB Institutional Breakout: Score >= " + str.tostring(alert_score3))

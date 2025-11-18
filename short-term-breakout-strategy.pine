@@ -1,0 +1,268 @@
+//@version=5
+strategy("STB Strategy - Short-Term Breakout", shorttitle="STB Strategy", overlay=true, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, commission_type=strategy.commission.percent, commission_value=0.1, slippage=2)
+
+// ========================================
+// SHORT-TERM BREAKOUT TOOLKIT (STB) - STRATEGY VERSION
+// Version: 1.0
+// Author: kozi214421 / Copilot-assisted
+// Date: 2025-11-18
+//
+// Backtestable strategy based on STB Extended indicator
+// Implements entry/exit logic, stops, targets, and position sizing
+// ========================================
+
+// ========================================
+// STRATEGY INPUTS
+// ========================================
+
+// Entry Rules
+entry_score_threshold = input.int(6, "Entry Score Threshold", minval=1, maxval=20, group="Strategy Rules")
+use_pullback_entry = input.bool(true, "Enable Pullback Entry", group="Strategy Rules")
+pullback_score_threshold = input.int(5, "Pullback Score Threshold", minval=1, maxval=20, group="Strategy Rules")
+
+// Stop Loss
+stop_type = input.string("Breakout Low", "Stop Loss Type", options=["Breakout Low", "EMA 9", "ATR Multiple"], group="Risk Management")
+atr_stop_mult = input.float(1.5, "ATR Stop Multiplier", minval=0.5, maxval=5.0, step=0.1, group="Risk Management")
+
+// Take Profit
+use_targets = input.bool(true, "Use Profit Targets", group="Risk Management")
+target1_mult = input.float(1.0, "Target 1 (× Range)", minval=0.5, maxval=5.0, step=0.1, group="Risk Management")
+target2_mult = input.float(2.0, "Target 2 (× Range)", minval=0.5, maxval=10.0, step=0.5, group="Risk Management")
+scale_out_pct = input.float(50, "Scale Out % at Target 1", minval=10, maxval=90, step=5, group="Risk Management")
+
+// Position Sizing
+risk_per_trade = input.float(1.0, "Risk Per Trade (%)", minval=0.1, maxval=5.0, step=0.1, group="Position Sizing")
+
+// Market Regime Filter
+use_regime_filter = input.bool(true, "Use Market Regime Filter", group="Filters")
+spy_ticker = input.symbol("SPY", "Market Index Symbol", group="Filters")
+
+// Core Parameters (same as indicator)
+resistance_lookback = input.int(20, "Resistance Lookback", minval=5, maxval=200, group="Core Signals")
+volume_ma_len = input.int(20, "Volume MA Length", minval=5, maxval=100, group="Core Signals")
+vol_spike_mult = input.float(1.8, "Volume Spike Multiplier", minval=1.0, maxval=5.0, step=0.1, group="Core Signals")
+
+// EMA Settings
+ema9_len = input.int(9, "EMA 9", minval=2, maxval=50, group="EMAs")
+ema20_len = input.int(20, "EMA 20", minval=5, maxval=100, group="EMAs")
+ema50_len = input.int(50, "EMA 50", minval=10, maxval=200, group="EMAs")
+
+// RSI Settings
+rsi_len = input.int(14, "RSI Length", minval=2, maxval=50, group="Momentum")
+rsi_threshold = input.float(60, "RSI Threshold", minval=50, maxval=80, step=1, group="Momentum")
+
+// Bollinger Bands
+bb_len = input.int(20, "BB Length", minval=5, maxval=100, group="Bollinger Bands")
+bb_mult = input.float(2.0, "BB Multiplier", minval=0.5, maxval=5.0, step=0.1, group="Bollinger Bands")
+squeeze_mult = input.float(0.5, "Squeeze Width Threshold", minval=0.1, maxval=1.0, step=0.05, group="Bollinger Bands")
+
+// MACD Settings
+macd_fast = input.int(12, "MACD Fast", minval=2, maxval=50, group="MACD")
+macd_slow = input.int(26, "MACD Slow", minval=5, maxval=100, group="MACD")
+macd_signal = input.int(9, "MACD Signal", minval=2, maxval=50, group="MACD")
+
+// VBP Settings
+vbp_lookback = input.int(100, "VBP Lookback", minval=20, maxval=500, group="Volume Profile")
+vbp_bins = input.int(20, "VBP Bins", minval=5, maxval=50, group="Volume Profile")
+
+// Manual Flags
+short_interest_pct = input.float(0.0, "Short Interest %", minval=0.0, maxval=100.0, step=0.1, group="Manual Flags")
+days_to_cover = input.float(0.0, "Days to Cover", minval=0.0, maxval=50.0, step=0.1, group="Manual Flags")
+options_bullish_flag = input.bool(false, "Options Bullish Flag", group="Manual Flags")
+dark_pool_buys = input.bool(false, "Dark Pool Buys", group="Manual Flags")
+orderflow_bullish = input.bool(false, "Order Flow Bullish", group="Manual Flags")
+
+// ========================================
+// CALCULATIONS (SAME AS INDICATOR)
+// ========================================
+
+// EMAs
+ema9 = ta.ema(close, ema9_len)
+ema20 = ta.ema(close, ema20_len)
+ema50 = ta.ema(close, ema50_len)
+
+// RSI
+rsi = ta.rsi(close, rsi_len)
+
+// Bollinger Bands
+bb_basis = ta.sma(close, bb_len)
+bb_dev = ta.stdev(close, bb_len)
+bb_upper = bb_basis + bb_mult * bb_dev
+bb_lower = bb_basis - bb_mult * bb_dev
+bb_width = (bb_upper - bb_lower) / bb_basis
+
+// MACD
+[macd_line, signal_line, macd_hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+
+// Volume
+vol_ma = ta.sma(volume, volume_ma_len)
+
+// ATR
+atr = ta.atr(14)
+
+// Market regime check (SPY above 20 EMA as simple filter)
+spy_close = request.security(spy_ticker, timeframe.period, close)
+spy_ema20 = ta.ema(spy_close, 20)
+market_regime_ok = not use_regime_filter or spy_close > spy_ema20
+
+// ========================================
+// SIGNAL CALCULATIONS (20 signals)
+// ========================================
+
+// Signal 1: Price breaking above resistance
+resistance = ta.highest(high, resistance_lookback)[1]
+signal_1_breakout = close > resistance and close[1] <= resistance ? 1 : 0
+
+// Signal 2: Volume expansion
+signal_2_volume = volume > vol_ma * vol_spike_mult ? 1 : 0
+
+// Signal 3: EMA stacking
+signal_3_ema_stack = close > ema9 and ema9 > ema20 and ema20 > ema50 ? 1 : 0
+
+// Signal 4: RSI momentum
+signal_4_rsi = rsi > rsi_threshold ? 1 : 0
+
+// Signal 5: BB squeeze then release
+bb_width_ma = ta.sma(bb_width, 20)
+bb_squeeze = bb_width < bb_width_ma * squeeze_mult
+bb_release = bb_squeeze[1] and not bb_squeeze
+signal_5_bb = bb_release ? 1 : 0
+
+// Signal 6: MACD bullish cross above zero
+signal_6_macd = ta.crossover(macd_line, signal_line) and macd_line > 0 ? 1 : 0
+
+// Signal 7: Higher-low structure
+low1 = ta.lowest(low, 5)[5]
+low2 = ta.lowest(low, 5)[10]
+low3 = ta.lowest(low, 5)[15]
+signal_7_higher_lows = low1 > low2 and low2 > low3 ? 1 : 0
+
+// Signal 8: Breakout candle structure
+range_pct = (high - low) / close
+close_position = (close - low) / (high - low)
+signal_8_candle = range_pct > 0.02 and close_position > 0.7 ? 1 : 0
+
+// Signal 9-20: Simplified for strategy (same logic as indicator)
+signal_9_vbp_shelf = 0  // Simplified for performance
+signal_10_air_pocket = 0
+signal_11_rel_strength = (close - close[50]) / close[50] * 100 > 5 ? 1 : 0
+signal_12_short_interest = short_interest_pct > 10 and days_to_cover > 2 ? 1 : 0
+signal_13_options = options_bullish_flag ? 1 : 0
+signal_14_avwap = 0  // Simplified
+signal_15_dark_pool = dark_pool_buys ? 1 : 0
+signal_16_vcp = 0  // Simplified
+signal_17_inside = high < high[1] and low > low[1] and high[1] < high[2] ? 1 : 0
+signal_18_liquidity_vacuum = 0
+signal_19_accumulation = volume < volume[1] and close < close[1] and signal_7_higher_lows ? 1 : 0
+signal_20_tape = 0
+orderflow_boost = orderflow_bullish ? 1 : 0
+
+// Total score
+total_score = signal_1_breakout + signal_2_volume + signal_3_ema_stack + signal_4_rsi + 
+              signal_5_bb + signal_6_macd + signal_7_higher_lows + signal_8_candle + 
+              signal_9_vbp_shelf + signal_10_air_pocket + signal_11_rel_strength + 
+              signal_12_short_interest + signal_13_options + signal_14_avwap + 
+              signal_15_dark_pool + signal_16_vcp + signal_17_inside + 
+              signal_18_liquidity_vacuum + signal_19_accumulation + signal_20_tape + 
+              orderflow_boost
+
+// ========================================
+// ENTRY CONDITIONS
+// ========================================
+
+// Primary breakout entry
+breakout_entry = signal_1_breakout == 1 and total_score >= entry_score_threshold and market_regime_ok
+
+// Pullback entry (price pulls back to EMA9 or EMA20 with volume support)
+pullback_to_ema = (math.abs(close - ema9) / close < 0.01 or math.abs(close - ema20) / close < 0.02)
+pullback_entry = use_pullback_entry and pullback_to_ema and volume > vol_ma and total_score >= pullback_score_threshold and market_regime_ok
+
+// ========================================
+// POSITION SIZING
+// ========================================
+
+// Calculate stop distance based on selected type
+var float entry_price = na
+var float breakout_low = na
+var float stop_price = na
+
+if breakout_entry or pullback_entry
+    entry_price := close
+    breakout_low := low
+    if stop_type == "Breakout Low"
+        stop_price := low
+    else if stop_type == "EMA 9"
+        stop_price := ema9
+    else  // ATR Multiple
+        stop_price := close - atr * atr_stop_mult
+
+// Position size based on risk
+stop_distance = entry_price - stop_price
+risk_amount = strategy.equity * (risk_per_trade / 100)
+shares = stop_distance > 0 ? math.floor(risk_amount / stop_distance) : 0
+position_size = shares > 0 ? shares : strategy.equity * 0.1 / close  // Fallback to 10% equity
+
+// ========================================
+// ENTRIES
+// ========================================
+
+if breakout_entry and strategy.position_size == 0
+    strategy.entry("Breakout Long", strategy.long, qty=position_size)
+    
+if pullback_entry and strategy.position_size == 0
+    strategy.entry("Pullback Long", strategy.long, qty=position_size)
+
+// ========================================
+// EXITS
+// ========================================
+
+// Stop loss
+if strategy.position_size > 0 and not na(stop_price)
+    strategy.exit("Stop Loss", from_entry="Breakout Long", stop=stop_price)
+    strategy.exit("Stop Loss", from_entry="Pullback Long", stop=stop_price)
+
+// Profit targets
+if use_targets and strategy.position_size > 0
+    consolidation_range = resistance - breakout_low
+    target1_price = entry_price + consolidation_range * target1_mult
+    target2_price = entry_price + consolidation_range * target2_mult
+    
+    // Scale out at target 1
+    scale_out_qty = strategy.position_size * (scale_out_pct / 100)
+    strategy.exit("Target 1", from_entry="Breakout Long", limit=target1_price, qty=scale_out_qty)
+    strategy.exit("Target 1", from_entry="Pullback Long", limit=target1_price, qty=scale_out_qty)
+    
+    // Full exit at target 2
+    strategy.exit("Target 2", from_entry="Breakout Long", limit=target2_price)
+    strategy.exit("Target 2", from_entry="Pullback Long", limit=target2_price)
+
+// Trailing stop with EMA9
+if strategy.position_size > 0 and close < ema9 * 0.98  // Close below EMA9 with 2% buffer
+    strategy.close("Breakout Long", comment="Trail Stop")
+    strategy.close("Pullback Long", comment="Trail Stop")
+
+// ========================================
+// PLOTS
+// ========================================
+
+plot(ema9, "EMA 9", color=color.new(color.blue, 0), linewidth=2)
+plot(ema20, "EMA 20", color=color.new(color.orange, 0), linewidth=2)
+plot(ema50, "EMA 50", color=color.new(color.red, 0), linewidth=2)
+plot(resistance, "Resistance", color=color.new(color.red, 50), linewidth=1, style=plot.style_stepline)
+
+// Plot entry signals
+plotshape(breakout_entry, "Breakout Entry", shape.triangleup, location.belowbar, color=color.green, size=size.small)
+plotshape(pullback_entry, "Pullback Entry", shape.triangleup, location.belowbar, color=color.blue, size=size.small)
+
+// Background color
+bgcolor(total_score >= 14 ? color.new(color.green, 90) : 
+        total_score >= 10 ? color.new(color.yellow, 95) : 
+        total_score >= 6 ? color.new(color.orange, 97) : na)
+
+// Display score
+var label score_label = na
+if barstate.islast
+    label.delete(score_label)
+    score_label := label.new(bar_index, high, "Score: " + str.tostring(total_score), 
+                              style=label.style_label_down, color=color.new(color.blue, 80), 
+                              textcolor=color.white, size=size.normal)
